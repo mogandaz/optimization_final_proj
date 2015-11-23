@@ -10,6 +10,7 @@ model ModelName
 		Width = 1..2
 		Height = 1..5 
 		InitLayout : array(Width, Height) of integer
+		CAPA = 19
 		
 		aa, bb : integer
 		hh, ww : integer
@@ -110,6 +111,7 @@ model ModelName
 	
 	forall(p in Period) do
 		cost(p) >= sum(w in Width, h in Height) ( (6-h) * move_cnt(p,w,h) ) + sum(w in Width, h in 2..5) ( (6-h) * 2 * move_zero(p,w,h) )
+		cost(p) <= CAPA
 	end-do
 	
 	setparam("XPRS_verbose", true) ! show me the progress on the screen
