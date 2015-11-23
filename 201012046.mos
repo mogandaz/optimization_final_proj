@@ -10,6 +10,7 @@ model ModelName
 		EndJ : array(Period) of integer
 		Job_S : array(NofJob) of integer
 		Job_T : array(NofJob) of string
+		Job_Box : array(NofJob) of integer
 		
 		Ammo : array(NofAmmo) of integer
 		
@@ -26,8 +27,9 @@ model ModelName
 	
 	Ammo :: [1,2,3,4,5,6,7,8,9,10]
 	Job_per_day :: [2,1,1,2,1,1]
-	Job_S :: [1,6,3,7,10,4,3,9]
-	Job_T :: ["o","i","i","i","o","o","o","o"]
+	Job_S :: [1,2,1,1,3,1,1,1]
+	Job_T :: ["o","o","i","i","o","o","o","o"]
+	Job_Box :: [2,1,1,1,1,1,1,1]
 	
 	forall(p in Period) do
 		if(p = 1) then
@@ -87,9 +89,9 @@ model ModelName
 	forall(p in Period, ammotype in NofAmmo) do
 		forall(j in StartJ(p)..EndJ(p) | Job_S(j) = ammotype) do
 			if Job_T(j) = "o" then
-				sum(w in Width, h in Height) prec(p-1,w,h,ammotype) = 1 + sum(w in Width, h in Height) prec(p,w,h,ammotype)
+				sum(w in Width, h in Height) prec(p-1,w,h,ammotype) = Job_Box(j) + sum(w in Width, h in Height) prec(p,w,h,ammotype)
 			else
-				sum(w in Width, h in Height) prec(p-1,w,h,ammotype) + 1 = sum(w in Width, h in Height) prec(p,w,h,ammotype)
+				sum(w in Width, h in Height) prec(p-1,w,h,ammotype) + Job_Box(j) = sum(w in Width, h in Height) prec(p,w,h,ammotype)
 			end-if
 			temp := 1
 		end-do
