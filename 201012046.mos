@@ -1,8 +1,9 @@
 model ModelName
 	uses "mmxprs"; !gain access to the Xpress-Optimizer solver
 	declarations
-		Period = 1..5
-		Job : array(Period) of integer
+		Period = 1..6
+		Job_S : array(Period) of integer
+		Job_T : array(Period) of string
 		
 		Ammo : array(1..10) of integer
 		
@@ -15,7 +16,8 @@ model ModelName
 	end-declarations
 	
 	Ammo :: [1,2,3,4,5,6,7,8,9,10]
-	Job :: [1,2,3,7,9]
+	Job_S :: [1,6,3,7,9,4]
+	Job_T :: ["o","i","i","i","o","o"]
 
 	! Set initial magazain status as input layout
 	fopen('init_layout.dat', F_INPUT)
@@ -30,7 +32,7 @@ model ModelName
 	end-do
 	
 	declarations
-		prec : array(0..5, Width, Height, 1..10) of mpvar
+		prec : array(0..6, Width, Height, 1..10) of mpvar
 		move_plus : array(Period, Width, Height, 1..10) of mpvar
 		move_minus : array(Period, Width, Height, 1..10) of mpvar
 		move_zero : array(Period, Width, 2..5) of mpvar
@@ -58,11 +60,15 @@ model ModelName
 		sum(ammotype in 1..10) prec(p,w,h,ammotype) <= 1
 	end-do
 	
-	! If Ammo is issued count should decrease by 1, otherwise not
-	forall(p in Period, ammotype in 1..10 | Job(p) = ammotype) do
-		sum(w in Width, h in Height) prec(p-1,w,h,ammotype) = 1 + sum(w in Width, h in Height) prec(p,w,h,ammotype)
+	! If Ammo is issued count should increase or decrease by 1, otherwise not
+	forall(p in Period, ammotype in 1..10 | Job_S(p) = ammotype) do
+		if Job_T(p) = "o" then
+			sum(w in Width, h in Height) prec(p-1,w,h,ammotype) = 1 + sum(w in Width, h in Height) prec(p,w,h,ammotype)
+		else
+			sum(w in Width, h in Height) prec(p-1,w,h,ammotype) + 1 = sum(w in Width, h in Height) prec(p,w,h,ammotype)
+		end-if
 	end-do
-	forall(p in Period, ammotype in 1..10 | Job(p) <> ammotype) do
+	forall(p in Period, ammotype in 1..10 | Job_S(p) <> ammotype) do
 		sum(w in Width, h in Height) prec(p-1,w,h,ammotype) = sum(w in Width, h in Height) prec(p,w,h,ammotype)
 	end-do
 	
@@ -110,15 +116,15 @@ model ModelName
 
 	minimize(totalCost)
 	
-	write("Schedule : ")
-	forall(p in Period) write(Job(p), "-> ")
-	writeln
-	forall(p in 0..5) do
+	forall(p in 0..6) do
 		writeln("======= DAY ", p , " =======")
-		writeln("-------")
+	
 		if p<>0 then
+			writeln(Job_S(p), "(", Job_T(p), ")")
 			writeln("Cost : ", getsol(cost(p)))
 		end-if
+		
+		writeln("-------")
 			
 		forall(h in Height) do
 			write("| ")
