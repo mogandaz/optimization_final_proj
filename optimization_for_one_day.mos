@@ -1,13 +1,15 @@
 model ModelName
 	uses "mmxprs"; !gain access to the Xpress-Optimizer solver
 	declarations
-		Period = 1..5
+		tPeriod = 1..5
+		SofPeriod = 0..4
+		Period = 0..1
 		Day = 0..5
 		NofAmmo = 1..10
 		NofJob = 1..5
-		Job_per_day : array(Period) of integer
-		StartJ : array(Period) of integer
-		EndJ : array(Period) of integer
+		Job_per_day : array(tPeriod) of integer
+		StartJ : array(tPeriod) of integer
+		EndJ : array(tPeriod) of integer
 		Job_S : array(NofJob) of integer
 		Job_T : array(NofJob) of string
 		Job_Box : array(NofJob) of integer
@@ -18,7 +20,7 @@ model ModelName
 		Height = 1..5
 		rHeight = 2..5
 		cost_for_h = 6
-		InitLayout : array(Width, Height) of integer
+		InitLayout : array(SofPeriod, Width, Height) of integer
 		CAPA = 200
 		
 		aa, bb : integer
@@ -31,13 +33,13 @@ model ModelName
 	Job_T :: ["o","o","i","i","o"]
 	Job_Box :: [1, 1 , 1 , 1 , 1 ]
 	
-	forall(p in Period) do
-		if(p = 1) then
-			StartJ(p) := 1
+	forall(tp in tPeriod) do
+		if(tp = 1) then
+			StartJ(tp) := 1
 		else
-			StartJ(p) := 1 + sum(pp in 1..p-1) Job_per_day(pp)	
+			StartJ(tp) := 1 + sum(pp in 1..tp-1) Job_per_day(pp)	
 		end-if
-		EndJ(p) := sum(pp in 1..p) Job_per_day(pp)
+		EndJ(tp) := sum(pp in 1..tp) Job_per_day(pp)
 	end-do
 
 	! Set initial magazain status as input layout
@@ -46,148 +48,161 @@ model ModelName
 		readln(aa, bb)
 		hh += 1
 		ww += 1
-		InitLayout(ww, hh) := aa
+		InitLayout(0, ww, hh) := aa
 		ww += 1
-		InitLayout(ww, hh) := bb
+		InitLayout(0, ww, hh) := bb
 		ww := 0
 	end-do
-	
+
 	declarations
-		prec : array(Day, Width, Height, NofAmmo) of mpvar
-		move_plus : array(Period, Width, Height, NofAmmo) of mpvar
-		move_minus : array(Period, Width, Height, NofAmmo) of mpvar
-		move_zero : array(Period, Width, rHeight) of mpvar
-		move_cnt : array(Period, Width, Height) of mpvar
-		cost : array(Period) of mpvar
-		
-		totalCost : linctr
+		prec : array(tPeriod, Period, Width, Height, NofAmmo) of mpvar
+		move_plus : array(tPeriod, Width, Height, NofAmmo) of mpvar
+		move_minus : array(tPeriod, Width, Height, NofAmmo) of mpvar
+		move_zero : array(tPeriod, Width, rHeight) of mpvar
+		move_cnt : array(tPeriod, Width, Height) of mpvar
+		temp_cost : array(tPeriod) of mpvar
+
+		Cost : array(tPeriod) of linctr
+		Cost_for_oneday : array(tPeriod) of integer
 	end-declarations
-	
-	totalCost := sum(i in Period) cost(i)
-	
-	forall(w in Width, h in Height, ammotype in NofAmmo) do
-		if InitLayout(w,h) = ammotype then
-			prec(0, w, h, ammotype) = 1
-		else
-			prec(0, w, h, ammotype) = 0
-		end-if
-	end-do
-	
-	! prec is binary value
-	forall(p in Period, w in Width, h in Height, ammotype in NofAmmo) prec(p,w,h,ammotype) is_binary
-	
-	! One ammo box for one location
-	forall(p in Period, w in Width, h in Height) do
-		sum(ammotype in NofAmmo) prec(p,w,h,ammotype) <= 1
-	end-do
-	
-	! If Ammo is issued count should increase or decrease by 1, otherwise not
+
 	declarations
 		temp : integer
 	end-declarations
-	temp := 0
-	forall(p in Period, ammotype in NofAmmo) do
-		forall(j in StartJ(p)..EndJ(p) | Job_S(j) = ammotype) do
-			if Job_T(j) = "o" then
-				sum(w in Width, h in Height) prec(p-1,w,h,ammotype) = Job_Box(j) + sum(w in Width, h in Height) prec(p,w,h,ammotype)
-			else
-				sum(w in Width, h in Height) prec(p-1,w,h,ammotype) + Job_Box(j) = sum(w in Width, h in Height) prec(p,w,h,ammotype)
-			end-if
-			temp := 1
-		end-do
-		if temp = 0 then
-			forall(j in StartJ(p)..EndJ(p) | Job_S(j) <> ammotype) do
-				sum(w in Width, h in Height) prec(p-1,w,h,ammotype) = sum(w in Width, h in Height) prec(p,w,h,ammotype)
-			end-do
-		end-if
-		temp := 0
-	end-do
-	
-	! move_zero is binary
-	forall(p in Period, w in Width, h in rHeight) move_zero(p,w,h) is_binary
-	
-	! Box should be stacked from inside
-	forall(p in Period, w in Width, h in rHeight) do
-		sum(ammotype in NofAmmo) prec(p,w,h,ammotype) <= sum(ammotype in NofAmmo) prec(p,w,h-1,ammotype)
-	end-do
-	
-	!
-	forall(p in Period, w in Width, h in Height, ammotype in NofAmmo) do
-		move_plus(p,w,h,ammotype) >= 0
-		move_minus(p,w,h,ammotype) >= 0
-		prec(p,w,h,ammotype) - prec(p-1,w,h,ammotype) = move_plus(p,w,h,ammotype) - move_minus(p,w,h,ammotype)
-	end-do
-	
-	forall(p in Period, w in Width, h in Height, ammotype in NofAmmo) do
-		move_plus(p,w,h,ammotype) is_integer 
-		move_minus(p,w,h,ammotype) is_integer
-	end-do
-	
-	forall(p in Period, w in Width, h in Height) do
-		move_cnt(p,w,h) = sum(ammotype in NofAmmo) (move_plus(p,w,h,ammotype) + move_minus(p,w,h,ammotype))
-	end-do
-	
-	forall(p in Period, w in Width, h in rHeight) do
-		forall(h2 in 1..h-1) do
-			2 * move_cnt(p,w,h-h2) - 6 * move_cnt(p,w,h) + 6 * sum(ammotype in NofAmmo) prec(p,w,h,ammotype) - 7 - 4 * move_zero(p,w,h) <= 0
-		end-do
-	end-do
-	
-	forall(p in Period, w in Width, h in Height) do
-		move_cnt(p,w,h) is_integer
-		move_cnt(p,w,h) <= 2
-	end-do
-	
-	forall(p in Period) do
-		cost(p) >= sum(w in Width, h in Height) ( (cost_for_h - h) * move_cnt(p,w,h) ) + sum(w in Width, h in rHeight) ( (cost_for_h - h) * 2 * move_zero(p,w,h) )
-		cost(p) <= CAPA
-	end-do
-	
-	setparam("XPRS_verbose", true) ! show me the progress on the screen
+		
+	forall(tp in tPeriod) do
 
-	minimize(totalCost)
-	
-	forall(p in Day) do
-		writeln("======= DAY ", p , " =======")
-	
-		if p<>0 then
-			forall(j in StartJ(p)..EndJ(p)) do
-				writeln(Job_S(j), "(", Job_T(j), ")")
-			end-do
-			writeln("Cost : ", getsol(cost(p)))
-		end-if
+		Cost(tp) := temp_cost(tp)
 		
-		writeln("------- -------")
-			
-		forall(h in Height) do
-			write("| ")
-			
-			forall(w in Width) do
-				forall(ammotype in NofAmmo | getsol(prec(p,w,h,ammotype)) = 1) write(ammotype, " ")
-				if sum (ammotype in NofAmmo) getsol(prec(p,w,h,ammotype)) = 0 then
-					write("  ")
-				end-if
-			end-do		
-		
-			write(" | ")
-			
-			if p<>0 then
-				write("| ")
-				forall(w in Width) write(getsol(move_cnt(p,w,h)), " ")
-				write(" | ")
-			end-if
-			
-			
-			if p<>0 and h<>1 then
-				write("| ")
-				forall(w in Width) write(getsol(move_zero(p,w,h)), " ")
-				writeln(" |")
+		forall(w in Width, h in Height, ammotype in NofAmmo) do
+			if InitLayout(tp-1, w,h) = ammotype then
+				prec(tp, 0, w, h, ammotype) = 1
 			else
-				writeln
+				prec(tp, 0, w, h, ammotype) = 0
 			end-if
 		end-do
+		
+		! prec is binary value
+		forall(p in Period, w in Width, h in Height, ammotype in NofAmmo) prec(tp,p,w,h,ammotype) is_binary
+		
+		! One ammo box for one location
+		forall(p in Period, w in Width, h in Height) do
+			sum(ammotype in NofAmmo) prec(tp,p,w,h,ammotype) <= 1
+		end-do
+		
+		! If Ammo is issued count should increase or decrease by 1, otherwise not
+		temp := 0
+		forall(ammotype in NofAmmo) do
+			forall(j in StartJ(tp)..EndJ(tp) | Job_S(j) = ammotype) do
+				if Job_T(j) = "o" then
+					sum(w in Width, h in Height) prec(tp,0,w,h,ammotype) = Job_Box(j) + sum(w in Width, h in Height) prec(tp,1,w,h,ammotype)
+				else
+					sum(w in Width, h in Height) prec(tp,0,w,h,ammotype) + Job_Box(j) = sum(w in Width, h in Height) prec(tp,1,w,h,ammotype)
+				end-if
+				temp := 1
+			end-do
+			if temp = 0 then
+				forall(j in StartJ(tp)..EndJ(tp) | Job_S(j) <> ammotype) do
+					sum(w in Width, h in Height) prec(tp,0,w,h,ammotype) = sum(w in Width, h in Height) prec(tp,1,w,h,ammotype)
+				end-do
+			end-if
+			temp := 0
+		end-do
+		
+		! move_zero is binary
+		forall(w in Width, h in rHeight) move_zero(tp,w,h) is_binary
+		
+		! Box should be stacked from inside
+		forall(w in Width, h in rHeight) do
+			sum(ammotype in NofAmmo) prec(tp,1,w,h,ammotype) <= sum(ammotype in NofAmmo) prec(tp,1,w,h-1,ammotype)
+		end-do
+		
+		!
+		forall(w in Width, h in Height, ammotype in NofAmmo) do
+			move_plus(tp,w,h,ammotype) >= 0
+			move_minus(tp,w,h,ammotype) >= 0
+			prec(tp,1,w,h,ammotype) - prec(tp,0,w,h,ammotype) = move_plus(tp,w,h,ammotype) - move_minus(tp,w,h,ammotype)
+		end-do
+		
+		forall(w in Width, h in Height, ammotype in NofAmmo) do
+			move_plus(tp,w,h,ammotype) is_integer 
+			move_minus(tp,w,h,ammotype) is_integer
+		end-do
+		
+		forall(w in Width, h in Height) do
+			move_cnt(tp,w,h) = sum(ammotype in NofAmmo) (move_plus(tp,w,h,ammotype) + move_minus(tp,w,h,ammotype))
+		end-do
+		
+		forall(w in Width, h in rHeight) do
+			forall(h2 in 1..h-1) do
+				2 * move_cnt(tp,w,h-h2) - 6 * move_cnt(tp,w,h) + 6 * sum(ammotype in NofAmmo) prec(tp,1,w,h,ammotype) - 7 - 4 * move_zero(tp,w,h) <= 0
+			end-do
+		end-do
+		
+		forall(w in Width, h in Height) do
+			move_cnt(tp,w,h) is_integer
+			move_cnt(tp,w,h) <= 2
+		end-do
+		
+		temp_cost(tp) >= sum(w in Width, h in Height) ( (cost_for_h - h) * move_cnt(tp,w,h) ) + sum(w in Width, h in rHeight) ( (cost_for_h - h) * 2 * move_zero(tp,w,h) )
+		temp_cost(tp) <= CAPA
+		
+		!setparam("XPRS_verbose", true) ! show me the progress on the screen
+
+		minimize(Cost(tp))
+		
+		Cost_for_oneday(tp) := integer(getsol(Cost(tp)))
+		
+		forall(p in Period) do
+			writeln("======= DAY ", p , " =======")
+		
+			if p<>0 then
+				forall(j in StartJ(tp)..EndJ(tp)) do
+					writeln(Job_S(j), "(", Job_T(j), ")")
+				end-do
+				writeln("Cost : ", getsol(Cost(tp)))
+			end-if
+			
+			writeln("------- -------")
+				
+			forall(h in Height) do
+				write("| ")
+				
+				forall(w in Width) do
+					forall(ammotype in NofAmmo | getsol(prec(tp,p,w,h,ammotype)) = 1) write(ammotype, " ")
+					if sum (ammotype in NofAmmo) getsol(prec(tp,p,w,h,ammotype)) = 0 then
+						write("  ")
+					end-if
+				end-do		
+			
+				write(" | ")
+				
+				if p<>0 then
+					write("| ")
+					forall(w in Width) write(getsol(move_cnt(tp,w,h)), " ")
+					write(" | ")
+				end-if
+				
+				
+				if p<>0 and h<>1 then
+					write("| ")
+					forall(w in Width) write(getsol(move_zero(tp,w,h)), " ")
+					writeln(" |")
+				else
+					writeln
+				end-if
+			end-do
+		end-do
+		if tp <= 4 then
+			forall(w in Width, h in Height, ammotype in NofAmmo) do
+				if getsol(prec(tp,1,w,h,ammotype)) = 1 then
+					InitLayout(tp, w, h) := ammotype
+				end-if
+			end-do
+		end-if
 	end-do
 	
 		
+	writeln( "TotalCost : ", sum(tp in tPeriod) Cost_for_oneday(tp) ) 
 
 end-model

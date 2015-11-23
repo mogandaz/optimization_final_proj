@@ -1,10 +1,10 @@
 model ModelName
 	uses "mmxprs"; !gain access to the Xpress-Optimizer solver
 	declarations
-		Period = 1..6
-		Day = 0..6
+		Period = 1..14
+		Day = 0..14
 		NofAmmo = 1..10
-		NofJob = 1..8
+		NofJob = 1..14
 		Job_per_day : array(Period) of integer
 		StartJ : array(Period) of integer
 		EndJ : array(Period) of integer
@@ -15,21 +15,21 @@ model ModelName
 		Ammo : array(NofAmmo) of integer
 		
 		Width = 1..4
-		Height = 1..7
-		rHeight = 2..7
-		cost_for_h = 8
+		Height = 1..10
+		rHeight = 2..10
+		cost_for_h = 11
 		InitLayout : array(Width, Height) of integer
-		CAPA = 100
+		CAPA = 200
 		
 		aa, bb, cc, dd : integer
 		hh, ww : integer
 	end-declarations
 	
 	Ammo :: [1,2,3,4,5,6,7,8,9,10]
-	Job_per_day :: [2,1,1,2,1,1]
-	Job_S :: [1,5,3,4,7,8,10,1]
-	Job_T :: ["o","o","i","i","o","o","o","o"]
-	Job_Box :: [1,1,1,1,1,1,1,1]
+	Job_per_day :: [1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+	Job_S :: [1 , 5 , 3 , 4 , 7 , 8 , 10, 1 , 1 , 2 , 3 , 4 , 6 , 6]
+	Job_T :: ["o","o","i","i","o","o","o","o","i","o","o","i","o","o"]
+	Job_Box :: [6 , 3 , 3 , 1 , 1 , 1 , 1 , 1 , 8 , 1 , 1 , 1 , 1 , 1 ]
 	
 	forall(p in Period) do
 		if(p = 1) then
