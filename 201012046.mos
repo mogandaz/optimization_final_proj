@@ -2,23 +2,41 @@ model ModelName
 	uses "mmxprs"; !gain access to the Xpress-Optimizer solver
 	declarations
 		Period = 1..6
-		Job_S : array(Period) of integer
-		Job_T : array(Period) of string
+		Day = 0..6
+		NofAmmo = 1..10
+		NofJob = 1..8
+		Job_per_day : array(Period) of integer
+		StartJ : array(Period) of integer
+		EndJ : array(Period) of integer
+		Job_S : array(NofJob) of integer
+		Job_T : array(NofJob) of string
 		
-		Ammo : array(1..10) of integer
+		Ammo : array(NofAmmo) of integer
 		
 		Width = 1..2
-		Height = 1..5 
+		Height = 1..7
+		rHeight = 2..7 
+		cost_for_h = 8
 		InitLayout : array(Width, Height) of integer
-		CAPA = 19
+		CAPA = 100
 		
 		aa, bb : integer
 		hh, ww : integer
 	end-declarations
 	
 	Ammo :: [1,2,3,4,5,6,7,8,9,10]
-	Job_S :: [1,6,3,7,9,4]
-	Job_T :: ["o","i","i","i","o","o"]
+	Job_per_day :: [2,1,1,2,1,1]
+	Job_S :: [1,6,3,7,10,4,3,9]
+	Job_T :: ["o","i","i","i","o","o","o","o"]
+	
+	forall(p in Period) do
+		if(p = 1) then
+			StartJ(p) := 1
+		else
+			StartJ(p) := 1 + sum(pp in 1..p-1) Job_per_day(pp)	
+		end-if
+		EndJ(p) := sum(pp in 1..p) Job_per_day(pp)
+	end-do
 
 	! Set initial magazain status as input layout
 	fopen('init_layout.dat', F_INPUT)
@@ -33,10 +51,10 @@ model ModelName
 	end-do
 	
 	declarations
-		prec : array(0..6, Width, Height, 1..10) of mpvar
-		move_plus : array(Period, Width, Height, 1..10) of mpvar
-		move_minus : array(Period, Width, Height, 1..10) of mpvar
-		move_zero : array(Period, Width, 2..5) of mpvar
+		prec : array(Day, Width, Height, NofAmmo) of mpvar
+		move_plus : array(Period, Width, Height, NofAmmo) of mpvar
+		move_minus : array(Period, Width, Height, NofAmmo) of mpvar
+		move_zero : array(Period, Width, rHeight) of mpvar
 		move_cnt : array(Period, Width, Height) of mpvar
 		cost : array(Period) of mpvar
 		
@@ -45,7 +63,7 @@ model ModelName
 	
 	totalCost := sum(i in Period) cost(i)
 	
-	forall(w in Width, h in Height, ammotype in 1..10) do
+	forall(w in Width, h in Height, ammotype in NofAmmo) do
 		if InitLayout(w,h) = ammotype then
 			prec(0, w, h, ammotype) = 1
 		else
@@ -54,63 +72,67 @@ model ModelName
 	end-do
 	
 	! prec is binary value
-	forall(p in Period, w in Width, h in Height, ammotype in 1..10) prec(p,w,h,ammotype) is_binary
+	forall(p in Period, w in Width, h in Height, ammotype in NofAmmo) prec(p,w,h,ammotype) is_binary
 	
 	! One ammo box for one location
 	forall(p in Period, w in Width, h in Height) do
-		sum(ammotype in 1..10) prec(p,w,h,ammotype) <= 1
+		sum(ammotype in NofAmmo) prec(p,w,h,ammotype) <= 1
 	end-do
 	
 	! If Ammo is issued count should increase or decrease by 1, otherwise not
-	forall(p in Period, ammotype in 1..10 | Job_S(p) = ammotype) do
-		if Job_T(p) = "o" then
-			sum(w in Width, h in Height) prec(p-1,w,h,ammotype) = 1 + sum(w in Width, h in Height) prec(p,w,h,ammotype)
-		else
-			sum(w in Width, h in Height) prec(p-1,w,h,ammotype) + 1 = sum(w in Width, h in Height) prec(p,w,h,ammotype)
+	declarations
+		temp : integer
+	end-declarations
+	temp := 0
+	forall(p in Period, ammotype in NofAmmo) do
+		forall(j in StartJ(p)..EndJ(p) | Job_S(j) = ammotype) do
+			if Job_T(j) = "o" then
+				sum(w in Width, h in Height) prec(p-1,w,h,ammotype) = 1 + sum(w in Width, h in Height) prec(p,w,h,ammotype)
+			else
+				sum(w in Width, h in Height) prec(p-1,w,h,ammotype) + 1 = sum(w in Width, h in Height) prec(p,w,h,ammotype)
+			end-if
+			temp := 1
+		end-do
+		if temp = 0 then
+			forall(j in StartJ(p)..EndJ(p) | Job_S(j) <> ammotype) do
+				sum(w in Width, h in Height) prec(p-1,w,h,ammotype) = sum(w in Width, h in Height) prec(p,w,h,ammotype)
+			end-do
 		end-if
-	end-do
-	forall(p in Period, ammotype in 1..10 | Job_S(p) <> ammotype) do
-		sum(w in Width, h in Height) prec(p-1,w,h,ammotype) = sum(w in Width, h in Height) prec(p,w,h,ammotype)
+		temp := 0
 	end-do
 	
 	! move_zero is binary
-	forall(p in Period, w in Width, h in 2..5) move_zero(p,w,h) is_binary
+	forall(p in Period, w in Width, h in rHeight) move_zero(p,w,h) is_binary
 	
 	!
-	forall(p in Period, w in Width, h in Height, ammotype in 1..10) do
+	forall(p in Period, w in Width, h in Height, ammotype in NofAmmo) do
 		move_plus(p,w,h,ammotype) >= 0
 		move_minus(p,w,h,ammotype) >= 0
 		prec(p,w,h,ammotype) - prec(p-1,w,h,ammotype) = move_plus(p,w,h,ammotype) - move_minus(p,w,h,ammotype)
 	end-do
 	
-	forall(p in Period, w in Width, h in Height, ammotype in 1..10) do
+	forall(p in Period, w in Width, h in Height, ammotype in NofAmmo) do
 		move_plus(p,w,h,ammotype) is_integer 
 		move_minus(p,w,h,ammotype) is_integer
 	end-do
 	
 	forall(p in Period, w in Width, h in Height) do
-		move_cnt(p,w,h) = sum(ammotype in 1..10) (move_plus(p,w,h,ammotype) + move_minus(p,w,h,ammotype))
+		move_cnt(p,w,h) = sum(ammotype in NofAmmo) (move_plus(p,w,h,ammotype) + move_minus(p,w,h,ammotype))
 	end-do
 	
-	forall(p in Period, w in Width, h in 2..5) do
+	forall(p in Period, w in Width, h in rHeight) do
 		forall(h2 in 1..h-1) do
-			2 * move_cnt(p,w,h-h2) - 6 * move_cnt(p,w,h) + 6 * sum(ammotype in 1..10) prec(p,w,h,ammotype) - 7 - 4 * move_zero(p,w,h) <= 0
+			2 * move_cnt(p,w,h-h2) - 6 * move_cnt(p,w,h) + 6 * sum(ammotype in NofAmmo) prec(p,w,h,ammotype) - 7 - 4 * move_zero(p,w,h) <= 0
 		end-do
-		!2 * move_cnt(p,w,h) - move_cnt(p,w,h-1) + 0.1 + 2 * move_zero(p,w,h) >= 0	
 	end-do
-	
-!	forall(p in Period, w in Width, h in 3..5) do
-!		move_zero(p,w,h-1) <= move_zero(p,w,h) !!!!!!!!! 0일 때만 적용되어야함.
-!	end-do
 	
 	forall(p in Period, w in Width, h in Height) do
 		move_cnt(p,w,h) is_integer
 		move_cnt(p,w,h) <= 2
 	end-do
 	
-	
 	forall(p in Period) do
-		cost(p) >= sum(w in Width, h in Height) ( (6-h) * move_cnt(p,w,h) ) + sum(w in Width, h in 2..5) ( (6-h) * 2 * move_zero(p,w,h) )
+		cost(p) >= sum(w in Width, h in Height) ( (cost_for_h - h) * move_cnt(p,w,h) ) + sum(w in Width, h in rHeight) ( (cost_for_h - h) * 2 * move_zero(p,w,h) )
 		cost(p) <= CAPA
 	end-do
 	
@@ -118,11 +140,13 @@ model ModelName
 
 	minimize(totalCost)
 	
-	forall(p in 0..6) do
+	forall(p in Day) do
 		writeln("======= DAY ", p , " =======")
 	
 		if p<>0 then
-			writeln(Job_S(p), "(", Job_T(p), ")")
+			forall(j in StartJ(p)..EndJ(p)) do
+				writeln(Job_S(j), "(", Job_T(j), ")")
+			end-do
 			writeln("Cost : ", getsol(cost(p)))
 		end-if
 		
@@ -130,16 +154,16 @@ model ModelName
 			
 		forall(h in Height) do
 			write("| ")
-			forall(ammotype in 1..10 | getsol(prec(p,1,h,ammotype)) = 1) write(ammotype, " ")
-			if sum (ammotype in 1..10) getsol(prec(p,1,h,ammotype)) = 0 then
+			forall(ammotype in NofAmmo | getsol(prec(p,1,h,ammotype)) = 1) write(ammotype, " ")
+			if sum (ammotype in NofAmmo) getsol(prec(p,1,h,ammotype)) = 0 then
 				write("  ")
 			end-if
 			
-			forall(ammotype in 1..10 | getsol(prec(p,2,h,ammotype)) = 1) write(ammotype)
-			if sum (ammotype in 1..10) getsol(prec(p,2,h,ammotype)) = 0 then
+			forall(ammotype in NofAmmo | getsol(prec(p,2,h,ammotype)) = 1) write(ammotype)
+			if sum (ammotype in NofAmmo) getsol(prec(p,2,h,ammotype)) = 0 then
 				write(" ")
 			end-if
-			!writeln(" |")
+
 			write(" | ")
 			
 			if p<>0 then
