@@ -1,0 +1,155 @@
+model ModelName
+	uses "mmxprs"; !gain access to the Xpress-Optimizer solver
+	declarations
+		Period = 1..5
+		Job : array(Period) of integer
+		
+		Ammo : array(1..10) of integer
+		
+		Width = 1..2
+		Height = 1..5 
+		InitLayout : array(Width, Height) of integer
+		
+		aa, bb : integer
+		hh, ww : integer
+	end-declarations
+	
+	Ammo :: [1,2,3,4,5,6,7,8,9,10]
+	Job :: [1,2,3,7,9]
+
+	! Set initial magazain status as input layout
+	fopen('init_layout.dat', F_INPUT)
+	while(not iseof) do
+		readln(aa, bb)
+		hh += 1
+		ww += 1
+		InitLayout(ww, hh) := aa
+		ww += 1
+		InitLayout(ww, hh) := bb
+		ww := 0
+	end-do
+	
+	declarations
+		prec : array(0..5, Width, Height, 1..10) of mpvar
+		move_plus : array(Period, Width, Height, 1..10) of mpvar
+		move_minus : array(Period, Width, Height, 1..10) of mpvar
+		move_zero : array(Period, Width, 2..5) of mpvar
+		move_cnt : array(Period, Width, Height) of mpvar
+		cost : array(Period) of mpvar
+		
+		totalCost : linctr
+	end-declarations
+	
+	totalCost := sum(i in Period) cost(i)
+	
+	forall(w in Width, h in Height, ammotype in 1..10) do
+		if InitLayout(w,h) = ammotype then
+			prec(0, w, h, ammotype) = 1
+		else
+			prec(0, w, h, ammotype) = 0
+		end-if
+	end-do
+	
+	! prec is binary value
+	forall(p in Period, w in Width, h in Height, ammotype in 1..10) prec(p,w,h,ammotype) is_binary
+	
+	! One ammo box for one location
+	forall(p in Period, w in Width, h in Height) do
+		sum(ammotype in 1..10) prec(p,w,h,ammotype) <= 1
+	end-do
+	
+	! If Ammo is issued count should decrease by 1, otherwise not
+	forall(p in Period, ammotype in 1..10 | Job(p) = ammotype) do
+		sum(w in Width, h in Height) prec(p-1,w,h,ammotype) = 1 + sum(w in Width, h in Height) prec(p,w,h,ammotype)
+	end-do
+	forall(p in Period, ammotype in 1..10 | Job(p) <> ammotype) do
+		sum(w in Width, h in Height) prec(p-1,w,h,ammotype) = sum(w in Width, h in Height) prec(p,w,h,ammotype)
+	end-do
+	
+	! move_zero is binary
+	forall(p in Period, w in Width, h in 2..5) move_zero(p,w,h) is_binary
+	
+	!
+	forall(p in Period, w in Width, h in Height, ammotype in 1..10) do
+		move_plus(p,w,h,ammotype) >= 0
+		move_minus(p,w,h,ammotype) >= 0
+		prec(p,w,h,ammotype) - prec(p-1,w,h,ammotype) = move_plus(p,w,h,ammotype) - move_minus(p,w,h,ammotype)
+	end-do
+	
+	forall(p in Period, w in Width, h in Height, ammotype in 1..10) do
+		move_plus(p,w,h,ammotype) is_integer 
+		move_minus(p,w,h,ammotype) is_integer
+	end-do
+	
+	forall(p in Period, w in Width, h in Height) do
+		move_cnt(p,w,h) = sum(ammotype in 1..10) (move_plus(p,w,h,ammotype) + move_minus(p,w,h,ammotype))
+	end-do
+	
+	forall(p in Period, w in Width, h in 2..5) do
+		!2 * move_cnt(p,w,h) - move_cnt(p,w,h-1) + 0.1 + 2 * move_zero(p,w,h) >= 0
+		2 * move_cnt(p,w,h-1) - 6 * move_cnt(p,w,h) + 6 * sum(ammotype in 1..10) prec(p,w,h,ammotype) - 7 - 4 * move_zero(p,w,h) <= 0	
+	end-do
+	
+!	forall(p in Period, w in Width, h in 3..5) do
+!		move_zero(p,w,h-1) <= move_zero(p,w,h) !!!!!!!!! 0일 때만 적용되어야함.
+!	end-do
+	
+	forall(p in Period, w in Width, h in Height) do
+		move_cnt(p,w,h) is_integer
+		move_cnt(p,w,h) <= 2
+	end-do
+	
+	
+	forall(p in Period) do
+		cost(p) >= sum(w in Width, h in Height) ( (6-h) * move_cnt(p,w,h) ) + sum(w in Width, h in 2..5) ( (6-h) * 2 * move_zero(p,w,h) )
+	end-do
+	
+	setparam("XPRS_verbose", true) ! show me the progress on the screen
+
+	minimize(totalCost)
+	
+	forall(p in 0..5) do
+		writeln("======= DAY ", p , " =======")
+		writeln("-------")
+		if p<>0 then
+			writeln("Cost : ", getsol(cost(p)))
+		end-if
+			
+		forall(h in Height) do
+			write("| ")
+			forall(ammotype in 1..10 | getsol(prec(p,1,h,ammotype)) = 1) write(ammotype, " ")
+			if sum (ammotype in 1..10) getsol(prec(p,1,h,ammotype)) = 0 then
+				write("  ")
+			end-if
+			
+			forall(ammotype in 1..10 | getsol(prec(p,2,h,ammotype)) = 1) write(ammotype)
+			if sum (ammotype in 1..10) getsol(prec(p,2,h,ammotype)) = 0 then
+				write(" ")
+			end-if
+			!writeln(" |")
+			write(" | ")
+			
+			if p<>0 then
+				write("| ")
+				write(getsol(move_cnt(p,1,h)), " ")
+				write(getsol(move_cnt(p,2,h)), " ")
+				write(" | ")
+			end-if
+			
+			
+			if p<>0 and h<>1 then
+				write("| ")
+				write(getsol(move_zero(p,1,h)), " ")
+				write(getsol(move_zero(p,2,h)), " ")
+				writeln(" |")
+			else
+				writeln
+			end-if
+			
+				
+		end-do
+	end-do
+	
+		
+
+end-model
