@@ -14,22 +14,22 @@ model ModelName
 		
 		Ammo : array(NofAmmo) of integer
 		
-		Width = 1..2
+		Width = 1..4
 		Height = 1..7
-		rHeight = 2..7 
+		rHeight = 2..7
 		cost_for_h = 8
 		InitLayout : array(Width, Height) of integer
 		CAPA = 100
 		
-		aa, bb : integer
+		aa, bb, cc, dd : integer
 		hh, ww : integer
 	end-declarations
 	
 	Ammo :: [1,2,3,4,5,6,7,8,9,10]
 	Job_per_day :: [2,1,1,2,1,1]
-	Job_S :: [1,2,1,1,3,1,1,1]
+	Job_S :: [1,5,3,4,7,8,10,1]
 	Job_T :: ["o","o","i","i","o","o","o","o"]
-	Job_Box :: [2,1,1,1,1,1,1,1]
+	Job_Box :: [1,1,1,1,1,1,1,1]
 	
 	forall(p in Period) do
 		if(p = 1) then
@@ -43,12 +43,16 @@ model ModelName
 	! Set initial magazain status as input layout
 	fopen('init_layout.dat', F_INPUT)
 	while(not iseof) do
-		readln(aa, bb)
+		readln(aa, bb, cc, dd)
 		hh += 1
 		ww += 1
 		InitLayout(ww, hh) := aa
 		ww += 1
 		InitLayout(ww, hh) := bb
+		ww += 1
+		InitLayout(ww, hh) := cc
+		ww += 1
+		InitLayout(ww, hh) := dd
 		ww := 0
 	end-do
 	
@@ -106,6 +110,11 @@ model ModelName
 	! move_zero is binary
 	forall(p in Period, w in Width, h in rHeight) move_zero(p,w,h) is_binary
 	
+	! Box should be stacked from inside
+	forall(p in Period, w in Width, h in rHeight) do
+		sum(ammotype in NofAmmo) prec(p,w,h,ammotype) <= sum(ammotype in NofAmmo) prec(p,w,h-1,ammotype)
+	end-do
+	
 	!
 	forall(p in Period, w in Width, h in Height, ammotype in NofAmmo) do
 		move_plus(p,w,h,ammotype) >= 0
@@ -152,40 +161,34 @@ model ModelName
 			writeln("Cost : ", getsol(cost(p)))
 		end-if
 		
-		writeln("-------")
+		writeln("------- -------")
 			
 		forall(h in Height) do
 			write("| ")
-			forall(ammotype in NofAmmo | getsol(prec(p,1,h,ammotype)) = 1) write(ammotype, " ")
-			if sum (ammotype in NofAmmo) getsol(prec(p,1,h,ammotype)) = 0 then
-				write("  ")
-			end-if
 			
-			forall(ammotype in NofAmmo | getsol(prec(p,2,h,ammotype)) = 1) write(ammotype)
-			if sum (ammotype in NofAmmo) getsol(prec(p,2,h,ammotype)) = 0 then
-				write(" ")
-			end-if
-
+			forall(w in Width) do
+				forall(ammotype in NofAmmo | getsol(prec(p,w,h,ammotype)) = 1) write(ammotype, " ")
+				if sum (ammotype in NofAmmo) getsol(prec(p,w,h,ammotype)) = 0 then
+					write("  ")
+				end-if
+			end-do		
+		
 			write(" | ")
 			
 			if p<>0 then
 				write("| ")
-				write(getsol(move_cnt(p,1,h)), " ")
-				write(getsol(move_cnt(p,2,h)), " ")
+				forall(w in Width) write(getsol(move_cnt(p,w,h)), " ")
 				write(" | ")
 			end-if
 			
 			
 			if p<>0 and h<>1 then
 				write("| ")
-				write(getsol(move_zero(p,1,h)), " ")
-				write(getsol(move_zero(p,2,h)), " ")
+				forall(w in Width) write(getsol(move_zero(p,w,h)), " ")
 				writeln(" |")
 			else
 				writeln
 			end-if
-			
-				
 		end-do
 	end-do
 	
