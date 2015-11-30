@@ -3,6 +3,7 @@ model ModelName
 	declarations
 		Period = 1..5
 		Day = 0..5
+		Magazine = 1..3
 		NofAmmo = 1..10
 		NofJob = 1..5
 		Job_per_day : array(Period) of integer
@@ -15,23 +16,26 @@ model ModelName
 		Ammo : array(NofAmmo) of integer
 		
 		Stack = 1..2
+		rStack = 2..2
 		Width = 1..2
-		Height = 1..5
-		rHeight = 2..5
-		cost_for_h = 6
+		Height = 1..4
+		rHeight = 2..4
+		cost_for_h = 5
+		cost_for_w = 2
 		cost_for_s = 1
-		InitLayout : array(Width, Height, Stack) of integer
-		CAPA = 200
+		cost_for_m = 1 ! cost for moving between magazine
+		InitLayout : array(Magazine, Width, Height, Stack) of integer
+		CAPA = 400
 		
-		aa, bb, cc, dd, ss : integer
-		hh, ww : integer
+		aa, bb, cc, dd : integer
+		ss, mm, hh, ww : integer
 	end-declarations
 	
 	Ammo :: [1,2,3,4,5,6,7,8,9,10]
 	Job_per_day :: [1,1,1,1,1]
-	Job_S :: [ 1 , 5 , 3 , 4 , 7]
-	Job_T :: ["o","o","o","i","o"]
-	Job_Box :: [1, 1 , 1 , 1 , 1 ]
+	Job_S :: [ 1 , 4 , 3 , 2 , 1]
+	Job_T :: ["i","o","o","o","o"]
+	Job_Box :: [4, 1 , 1 , 1 , 1 ]
 	
 	forall(p in Period) do
 		if(p = 1) then
@@ -43,44 +47,49 @@ model ModelName
 	end-do
 
 	! Set initial magazain status as input layout
-	fopen('init_layout_stack.dat', F_INPUT)
-	forall(s in Stack) do
-		readln("STACK", ss)
-		forall(h in Height) do
-			readln(aa, bb)
-			InitLayout(1,h,s) := aa
-			InitLayout(2,h,s) := bb	
+	fopen('init_layout_magazine.dat', F_INPUT)
+	forall(m in Magazine) do
+		readln("MAGAZINE", mm)
+		forall(s in Stack) do	
+			readln("STACK", ss)
+			forall(h in Height) do
+				readln(aa, bb)
+				InitLayout(m,1,h,s) := aa
+				InitLayout(m,2,h,s) := bb	
+			end-do
 		end-do
 	end-do
 	
 	declarations
-		prec : array(Day, Width, Height, Stack, NofAmmo) of mpvar
-		move_plus : array(Period, Width, Height, Stack, NofAmmo) of mpvar
-		move_minus : array(Period, Width, Height, Stack, NofAmmo) of mpvar
-		move_zero : array(Period, Width, rHeight, Stack) of mpvar
-		move_cnt : array(Period, Width, Height, Stack) of mpvar
-		cost : array(Period) of mpvar
+		prec : array(Day, Magazine, Width, Height, Stack, NofAmmo) of mpvar
+		move_plus : array(Period, Magazine, Width, Height, Stack, NofAmmo) of mpvar
+		move_minus : array(Period, Magazine, Width, Height, Stack, NofAmmo) of mpvar
+		move_zero : array(Period, Magazine, Width, rHeight, Stack) of mpvar
+		move_cnt : array(Period, Magazine, Width, Height, Stack) of mpvar
+		inout_cost : array(Period) of mpvar
+		stack_cost : array(Period) of mpvar
+		magazine_cost : array(Period) of mpvar
 		
 		totalCost : linctr
 	end-declarations
 	
-	totalCost := sum(i in Period) cost(i)
+	totalCost := sum(i in Period) (inout_cost(i) + stack_cost(i) + magazine_cost(i))
 	
 	! initialize layout
-	forall(w in Width, h in Height, s in Stack, ammotype in NofAmmo) do
-		if InitLayout(w,h,s) = ammotype then
-			prec(0, w, h, s, ammotype) = 1
+	forall(m in Magazine, w in Width, h in Height, s in Stack, ammotype in NofAmmo) do
+		if InitLayout(m,w,h,s) = ammotype then
+			prec(0,m,w,h,s,ammotype) = 1
 		else
-			prec(0, w, h, s, ammotype) = 0
+			prec(0,m,w,h,s,ammotype) = 0
 		end-if
 	end-do
 	
 	! prec is binary value
-	forall(p in Period, w in Width, h in Height, s in Stack, ammotype in NofAmmo) prec(p,w,h,s,ammotype) is_binary
+	forall(p in Period, m in Magazine, w in Width, h in Height, s in Stack, ammotype in NofAmmo) prec(p,m,w,h,s,ammotype) is_binary
 	
 	! One ammo box for one location
-	forall(p in Period, w in Width, h in Height, s in Stack) do
-		sum(ammotype in NofAmmo) prec(p,w,h,s,ammotype) <= 1
+	forall(p in Period, m in Magazine, w in Width, h in Height, s in Stack) do
+		sum(ammotype in NofAmmo) prec(p,m,w,h,s,ammotype) <= 1
 	end-do
 	
 	! If Ammo is issued count should increase or decrease by 1, otherwise not
@@ -91,77 +100,149 @@ model ModelName
 	forall(p in Period, ammotype in NofAmmo) do
 		forall(j in StartJ(p)..EndJ(p) | Job_S(j) = ammotype) do
 			if Job_T(j) = "o" then
-				sum(w in Width, h in Height, s in Stack) prec(p-1,w,h,s,ammotype) = Job_Box(j) + sum(w in Width, h in Height, s in Stack) prec(p,w,h,s,ammotype)
+				sum(m in Magazine, w in Width, h in Height, s in Stack) prec(p-1,m,w,h,s,ammotype) = Job_Box(j) + sum(m in Magazine, w in Width, h in Height, s in Stack) prec(p,m,w,h,s,ammotype)
 			else
-				sum(w in Width, h in Height, s in Stack) prec(p-1,w,h,s,ammotype) + Job_Box(j) = sum(w in Width, h in Height, s in Stack) prec(p,w,h,s,ammotype)
+				sum(m in Magazine, w in Width, h in Height, s in Stack) prec(p-1,m,w,h,s,ammotype) + Job_Box(j) = sum(m in Magazine, w in Width, h in Height, s in Stack) prec(p,m,w,h,s,ammotype)
 			end-if
 			temp := 1
 		end-do
 		if temp = 0 then
 			forall(j in StartJ(p)..EndJ(p) | Job_S(j) <> ammotype) do
-				sum(w in Width, h in Height, s in Stack) prec(p-1,w,h,s,ammotype) = sum(w in Width, h in Height, s in Stack) prec(p,w,h,s,ammotype)
+				sum(m in Magazine, w in Width, h in Height, s in Stack) prec(p-1,m,w,h,s,ammotype) = sum(m in Magazine, w in Width, h in Height, s in Stack) prec(p,m,w,h,s,ammotype)
 			end-do
 		end-if
 		temp := 0
 	end-do
 	
 	! move_zero is binary
-	forall(p in Period, w in Width, h in rHeight, s in Stack) move_zero(p,w,h,s) is_binary
+	forall(p in Period, m in Magazine, w in Width, h in rHeight, s in Stack) move_zero(p,m,w,h,s) is_binary
 	
 	! Box shoud be stacked from bottom to top
-	forall(p in Period, w in Width, h in Height) do
-		sum(ammotype in NofAmmo) prec(p,w,h,2,ammotype) <= sum(ammotype in NofAmmo) prec(p,w,h,1,ammotype)
+	forall(m in Magazine, p in Period, w in Width, h in Height, s in rStack) do
+		forall(s2 in 1..s-1) do
+			sum(ammotype in NofAmmo) prec(p,m,w,h,s,ammotype) <= sum(ammotype in NofAmmo) prec(p,m,w,h,s2,ammotype)
+		end-do
 	end-do
 	
 	! Box on the FIRST stack should be stacked from inside
-	forall(p in Period, w in Width, h in rHeight) do
-		sum(ammotype in NofAmmo) prec(p,w,h,1,ammotype) <= sum(ammotype in NofAmmo) prec(p,w,h-1,1,ammotype)
+	forall(p in Period, m in Magazine, w in Width, h in rHeight) do
+		sum(ammotype in NofAmmo) prec(p,m,w,h,1,ammotype) <= sum(ammotype in NofAmmo) prec(p,m,w,h-1,1,ammotype)
 	end-do
 	
 	! Check movement
-	forall(p in Period, w in Width, h in Height, s in Stack, ammotype in NofAmmo) do
-		move_plus(p,w,h,s,ammotype) >= 0
-		move_minus(p,w,h,s,ammotype) >= 0
-		prec(p,w,h,s,ammotype) - prec(p-1,w,h,s,ammotype) = move_plus(p,w,h,s,ammotype) - move_minus(p,w,h,s,ammotype)
+	forall(p in Period, m in Magazine, w in Width, h in Height, s in Stack, ammotype in NofAmmo) do
+		move_plus(p,m,w,h,s,ammotype) >= 0
+		move_minus(p,m,w,h,s,ammotype) >= 0
+		prec(p,m,w,h,s,ammotype) - prec(p-1,m,w,h,s,ammotype) = move_plus(p,m,w,h,s,ammotype) - move_minus(p,m,w,h,s,ammotype)
 	end-do
-	forall(p in Period, w in Width, h in Height, s in Stack, ammotype in NofAmmo) do
-		move_plus(p,w,h,s,ammotype) is_integer 
-		move_minus(p,w,h,s,ammotype) is_integer
+	forall(p in Period, m in Magazine, w in Width, h in Height, s in Stack, ammotype in NofAmmo) do
+		move_plus(p,m,w,h,s,ammotype) is_integer 
+		move_minus(p,m,w,h,s,ammotype) is_integer
 	end-do
-	forall(p in Period, w in Width, h in Height, s in Stack) do
-		move_cnt(p,w,h,s) = sum(ammotype in NofAmmo) (move_plus(p,w,h,s,ammotype) + move_minus(p,w,h,s,ammotype))
+	forall(p in Period, m in Magazine, w in Width, h in Height, s in Stack) do
+		move_cnt(p,m,w,h,s) = sum(ammotype in NofAmmo) (move_plus(p,m,w,h,s,ammotype) + move_minus(p,m,w,h,s,ammotype))
 	end-do
-	forall(p in Period, w in Width, h in Height, s in Stack) do
-		move_cnt(p,w,h,s) is_integer
-		move_cnt(p,w,h,s) <= 2
+	forall(p in Period, m in Magazine, w in Width, h in Height, s in Stack) do
+		move_cnt(p,m,w,h,s) is_integer
+		move_cnt(p,m,w,h,s) <= 2
 	end-do
 	
 	! Movement constraint
 	! Ammo box which is located in front of other moved boxes should be moved.
 	! Also boxes below moved box should be moved 
-	forall(p in Period, w in Width, h in rHeight) do
+	forall(p in Period, m in Magazine, w in Width, h in rHeight) do
 		forall(h2 in 1..h-1) do
-			2 * move_cnt(p,w,h-h2,1) - 6 * move_cnt(p,w,h,1) + 6 * sum(ammotype in NofAmmo) prec(p,w,h,1,ammotype) - 7 - 4 * move_zero(p,w,h,1) <= 0
-			2 * move_cnt(p,w,h-h2,2) - 6 * move_cnt(p,w,h,2) + 6 * sum(ammotype in NofAmmo) prec(p,w,h,2,ammotype) - 7 - 4 * move_zero(p,w,h,2) <= 0 
-			2 * move_cnt(p,w,h-h2,2) - 6 * move_cnt(p,w,h,1) + 6 * sum(ammotype in NofAmmo) prec(p,w,h,1,ammotype) - 7 - 4 * move_zero(p,w,h,1) <= 0 
+			2 * move_cnt(p,m,w,h-h2,1) - 6 * move_cnt(p,m,w,h,1) + 6 * sum(ammotype in NofAmmo) prec(p,m,w,h,1,ammotype) - 7 - 4 * move_zero(p,m,w,h,1) <= 0
+			2 * move_cnt(p,m,w,h-h2,2) - 6 * move_cnt(p,m,w,h,2) + 6 * sum(ammotype in NofAmmo) prec(p,m,w,h,2,ammotype) - 7 - 4 * move_zero(p,m,w,h,2) <= 0 
+			2 * move_cnt(p,m,w,h-h2,2) - 6 * move_cnt(p,m,w,h,1) + 6 * sum(ammotype in NofAmmo) prec(p,m,w,h,1,ammotype) - 7 - 4 * move_zero(p,m,w,h,1) <= 0 
 		end-do
 	end-do
-	forall(p in Period, w in Width, h in rHeight) do
+	forall(p in Period, m in Magazine, w in Width, h in rHeight) do
 		forall(h2 in 0..h-1) do
-			2 * move_cnt(p,w,h-h2,1) - 6 * move_cnt(p,w,h,2) + 6 * sum(ammotype in NofAmmo) prec(p,w,h,2,ammotype) - 7 - 4 * move_zero(p,w,h,2) <= 0 
+			2 * move_cnt(p,m,w,h-h2,1) - 6 * move_cnt(p,m,w,h,2) + 6 * sum(ammotype in NofAmmo) prec(p,m,w,h,2,ammotype) - 7 - 4 * move_zero(p,m,w,h,2) <= 0 
 		end-do
 	end-do
 	
 	! Stack constraint
 	! Different type of ammo cannot be stacked
-	forall(p in Period, w in Width, h in Height, ammotype in NofAmmo) do
-		prec(p,w,h,1,ammotype) >= prec(p,w,h,2,ammotype)
+	forall(p in Period, m in Magazine, w in Width, h in Height, ammotype in NofAmmo) do
+		prec(p,m,w,h,1,ammotype) >= prec(p,m,w,h,2,ammotype)
 	end-do
+			
+	! Wrap constraint
+	! Same ammotype should be wrapped
+	declarations
+		width_pair = 1..(cost_for_w-1)*(cost_for_h-1)
+		height_pair = 1..(cost_for_h-2)*cost_for_w
+		binary_var1 : array(Period, Magazine, NofAmmo, width_pair) of mpvar
+		binary_var2 : array(Period, Magazine, NofAmmo, height_pair) of mpvar
+	end-declarations
+	
+	forall(p in Period, m in Magazine, ammotype in NofAmmo) do
+		forall(w in width_pair) binary_var1(p,m,ammotype,w) is_binary
+		forall(h in height_pair) binary_var2(p,m,ammotype,h) is_binary
 		
+		forall(h in 1..cost_for_h-1, w in 1..cost_for_w-1) do
+			prec(p,m,w,h,1,ammotype) + prec(p,m,w+1,h,1,ammotype) <= binary_var1(p,m,ammotype,(h-1)*(cost_for_w-1)+w)+1
+			prec(p,m,w,h,1,ammotype) + prec(p,m,w+1,h,1,ammotype) >= 2*binary_var1(p,m,ammotype,(h-1)*(cost_for_w-1)+w)
+		end-do
+		
+		forall(h in 1..cost_for_h-2, w in 1..cost_for_w) do
+			prec(p,m,w,h,1,ammotype) + prec(p,m,w,h+1,1,ammotype) <= binary_var2(p,m,ammotype,(w-1)*(cost_for_h-2)+h)+1
+			prec(p,m,w,h,1,ammotype) + prec(p,m,w,h+1,1,ammotype) >= 2*binary_var2(p,m,ammotype,(w-1)*(cost_for_h-2)+h)
+		end-do
+	end-do
+	
+	forall(p in Period, m in Magazine, ammotype in NofAmmo) do
+		sum(w in width_pair) binary_var1(p,m,ammotype,w) + sum(h in height_pair) binary_var2(p,m,ammotype,h) >= sum(w in Width, h in Height) prec(p,m,w,h,1,ammotype) - 1
+	end-do
+	
+	! Build Magazine Network
+	declarations
+		cost_m : array(Magazine, Magazine) of integer
+		move_m : array(Period, Magazine, Magazine, NofAmmo) of mpvar
+		move_in : array(Period, Magazine, NofAmmo) of mpvar
+		move_out : array(Period, Magazine, NofAmmo) of mpvar
+	end-declarations
+	
+	forall(m1 in Magazine, m2 in Magazine | m1<>m2) cost_m(m1,m2) := cost_for_m * abs(m1-m2)
+	
+	forall(p in Period, m1 in Magazine, m2 in Magazine, ammotype in NofAmmo) move_m(p,m1,m2,ammotype) is_integer
+	forall(p in Period, m in Magazine, ammotype in NofAmmo) do
+		move_in(p,m,ammotype) is_integer
+		move_out(p,m,ammotype) is_integer
+	end-do
+	
+	forall(p in Period, ammotype in NofAmmo) do
+		temp := 0
+		forall(j in StartJ(p)..EndJ(p) | Job_S(j) = ammotype) do
+			if Job_T(j) = "o" then
+				sum(m in Magazine) move_out(p,m,ammotype) = Job_Box(j)
+				sum(m in Magazine) move_in(p,m,ammotype) = 0
+			else
+				sum(m in Magazine) move_in(p,m,ammotype) = Job_Box(j)
+				sum(m in Magazine) move_out(p,m,ammotype) = 0
+			end-if
+			temp := 1
+		end-do
+		if temp = 0 then
+			sum(m in Magazine) move_in(p,m,ammotype) = 0
+			sum(m in Magazine) move_out(p,m,ammotype) = 0
+		end-if
+	end-do
+	
+	forall(p in Period, m in Magazine, ammotype in NofAmmo) do
+		sum(w in Width, h in Height, s in Stack) ( prec(p,m,w,h,s,ammotype) - prec(p-1,m,w,h,s,ammotype) ) = move_in(p,m,ammotype) - move_out(p,m,ammotype) + sum(m2 in Magazine | m<>m2) move_m(p,m2,m,ammotype) - sum(m2 in Magazine | m<>m2) move_m(p,m,m2,ammotype)
+	end-do
+	
+	
 	! Cost calculation
 	forall(p in Period) do
-		cost(p) >= sum(w in Width, h in Height, s in Stack) ( (cost_for_h - h + cost_for_s * (s-1)) * move_cnt(p,w,h,s) ) + sum(w in Width, h in rHeight, s in Stack) ( (cost_for_h - h + cost_for_s * (s-1)) * 2 * move_zero(p,w,h,s) )
-		cost(p) <= CAPA
+		!cost(p) >= sum(w in Width, h in Height, s in Stack) ( (cost_for_h - h + cost_for_s * (s-1)) * move_cnt(p,w,h,s) ) + sum(w in Width, h in rHeight, s in Stack) ( (cost_for_h - h + cost_for_s * (s-1)) * 2 * move_zero(p,w,h,s) )
+		inout_cost(p) >= sum(m in Magazine, w in Width, h in Height, s in Stack) ( (cost_for_h - h) * move_cnt(p,m,w,h,s) ) + sum(m in Magazine, w in Width, h in rHeight, s in Stack) ((cost_for_h - h) * 2 * move_zero(p,m,w,h,s))
+		stack_cost(p) >= sum(m in Magazine, w in Width, h in Height, s in Stack) ( (cost_for_s * (s-1)) * move_cnt(p,m,w,h,s) ) + sum(m in Magazine, w in Width, h in rHeight, s in Stack) ( cost_for_s * (s-1) * 2 * move_zero(p,m,w,h,s))
+		magazine_cost(p) >= sum(m1,m2 in Magazine, ammotype in NofAmmo | m1<>m2) ( cost_m(m1,m2) * move_m(p,m1,m2,ammotype) )
+		inout_cost(p) + stack_cost(p) + magazine_cost(p) <= CAPA
 	end-do
 	
 	setparam("XPRS_verbose", true) ! show me the progress on the screen
@@ -177,42 +258,44 @@ model ModelName
 			forall(j in StartJ(p)..EndJ(p)) do
 				writeln(Job_S(j), "(", Job_T(j), ")")
 			end-do
-			writeln("Cost : ", getsol(cost(p)))
+			writeln("Cost : ", getsol(inout_cost(p)) + getsol(stack_cost(p)) + getsol(magazine_cost(p)))
 		end-if
 		
-		forall(s in Stack) do
-			writeln("STACK ", s)
-			writeln("------- -------")
-				
-			forall(h in Height) do
-				write("| ")
-				
-				forall(w in Width) do
-					forall(ammotype in NofAmmo | getsol(prec(p,w,h,s,ammotype)) = 1) write(ammotype, " ")
-					if sum (ammotype in NofAmmo) getsol(prec(p,w,h,s,ammotype)) = 0 then
-						write("  ")
-					end-if
-				end-do		
-			
-				write(" | ")
-				
-				if p<>0 then
+		forall(m in Magazine) do
+			writeln("MAGAZINE ", m)
+			forall(s in Stack) do
+				writeln("STACK ", s)
+				writeln("------- -------")
+					
+				forall(h in Height) do
 					write("| ")
-					forall(w in Width) write(getsol(move_cnt(p,w,h,s)), " ")
+					
+					forall(w in Width) do
+						forall(ammotype in NofAmmo | getsol(prec(p,m,w,h,s,ammotype)) = 1) write(ammotype, " ")
+						if sum (ammotype in NofAmmo) getsol(prec(p,m,w,h,s,ammotype)) = 0 then
+							write("  ")
+						end-if
+					end-do		
+				
 					write(" | ")
-				end-if
-				
-				
-				if p<>0 and h<>1 then
-					write("| ")
-					forall(w in Width) write(getsol(move_zero(p,w,h,s)), " ")
-					writeln(" |")
-				else
-					writeln
-				end-if
+					
+					if p<>0 then
+						write("| ")
+						forall(w in Width) write(getsol(move_cnt(p,m,w,h,s)), " ")
+						write(" | ")
+					end-if
+					
+					
+					if p<>0 and h<>1 then
+						write("| ")
+						forall(w in Width) write(getsol(move_zero(p,m,w,h,s)), " ")
+						writeln(" |")
+					else
+						writeln
+					end-if
+				end-do
 			end-do
-		end-do
-		
+		end-do	
 	end-do
 	
 		
